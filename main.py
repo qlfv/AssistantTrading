@@ -1,4 +1,3 @@
-import smtplib
 import requests
 import os
 from dotenv import load_dotenv
@@ -21,10 +20,8 @@ class TradingBot:
                                                             |___/           
         """)
         print("\n🚀 Bienvenue sur **FinTechForesight**, votre assistant intelligent pour le trading et les cryptomonnaies ! 🚀\n")
-        print("📊 Ce bot est conçu pour vous fournir des analyses de marché, des stratégies de trading, et répondre à vos questions sur les cryptomonnaies et les marchés boursiers.")
-        print("💡 Utilisez-le pour explorer les tendances, comprendre les mouvements du marché et affiner vos stratégies d'investissement.")
-        print("🔒 Vos conversations sont confidentielles, et nous veillons à maintenir une expérience fluide et sécurisée.\n")
-        print("👉 Tapez vos questions ou explorez nos fonctionnalités. Tapez 'quitter' à tout moment pour revenir au menu principal.")
+        print("📊 Posez vos questions sur les marchés boursiers, les cryptomonnaies ou demandez des analyses techniques.")
+        print("💡 Tapez 'quitter' à tout moment pour mettre fin à la session.")
         print("____________________________________________________________________________________\n")
 
     def handle_chat(self, user_message):
@@ -71,25 +68,13 @@ def main():
     bot.display_welcome_message()
 
     while True:
-        print("\nQue voulez-vous faire ?")
-        print("1. Discuter avec l'assistant IA")
-        print("2. Quitter")
-
-        choice = input("Votre choix (1/2): ")
-
-        if choice == '1':
-            print("Mode conversation avec l'assistant IA. Tapez 'quitter' pour revenir au menu principal.")
-            while True:
-                user_message = input("Votre question : ")
-                if user_message.lower() == 'quitter':
-                    break
-                response = bot.handle_chat(user_message)
-                print("Assistant IA:", response)
-        elif choice == '2':
-            print("Merci d'avoir utilisé le Bot. Au revoir!")
+        user_message = input("Votre question : ")
+        if user_message.lower() == 'quitter':
+            print("Merci d'avoir utilisé FinTechForesight. À bientôt !")
             break
-        else:
-            print("Choix non valide. Veuillez réessayer.")
+        response = bot.handle_chat(user_message)
+        print("\nAssistant IA :", response)
+        print("____________________________________________________________________________________\n")
 
 if __name__ == '__main__':
     main()
