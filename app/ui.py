@@ -1,96 +1,119 @@
-from PyQt5.QtWidgets import QVBoxLayout, QLabel, QComboBox, QPushButton, QMessageBox
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QVBoxLayout, QLabel, QPushButton
+from PyQt5.QtCore import Qt, QTimer
 
-def create_ui(parent_widget, account_selector_values, check_balance_func, reload_accounts_func, get_price_func):
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
+
+class PriceGraph(FigureCanvas):
+    def __init__(self, parent=None):
+        self.fig, self.ax = plt.subplots()
+        super().__init__(self.fig)
+        
+        self.setParent(parent)
+        
+        self.ax.set_title("Évolution du Prix de Solana (USD)")
+        self.ax.set_xlabel("Temps")
+        self.ax.set_ylabel("Prix (USD)")
+        
+        self.data = []
+
+    def update_graph(self, new_price):
+        self.data.append(new_price)
+        
+        if len(self.data) > 20:  # Limiter à 20 points pour éviter un graphique trop chargé
+            self.data.pop(0)
+        
+        self.ax.clear()
+        
+        self.ax.plot(self.data, marker="o", color="#88C0D0")
+        
+        self.ax.set_title("Évolution du Prix de Solana (USD)")
+        
+        self.draw()
+
+def create_ui(parent_widget, check_balance_func, get_price_func, check_connection_func):
+    """
+    Crée l'interface utilisateur principale.
+    
+    Args:
+        parent_widget: Le widget parent.
+        check_balance_func: Fonction pour récupérer le solde.
+        get_price_func: Fonction pour récupérer le prix de Solana.
+        check_connection_func: Fonction pour vérifier la connexion au compte Phantom.
+    """
     layout = QVBoxLayout(parent_widget)
     layout.setAlignment(Qt.AlignTop)
 
-    # Titre principal
-    title_label = QLabel("Phantom Balance Checker")
-    title_label.setStyleSheet("""
-        font-size: 28px;
-        font-weight: bold;
-        color: #ECEFF4;
-        margin-bottom: 20px;
-    """)
-    layout.addWidget(title_label)
-
-    # Sélection du compte
-    account_label = QLabel("Sélectionnez un compte :")
-    account_label.setStyleSheet("font-size: 16px; color: #D8DEE9;")
-    layout.addWidget(account_label)
-
-    account_selector = QComboBox()
-    account_selector.addItems(account_selector_values)
-    account_selector.setStyleSheet("""
-        QComboBox {
-            background-color: #3B4252;
-            color: #ECEFF4;
-            border: 1px solid #D8DEE9;
-            border-radius: 5px;
-            padding: 5px;
-        }
-        QComboBox:hover {
-            border-color: #81A1C1;
-        }
-        QComboBox::drop-down {
-            border: none;
-        }
-    """)
-    layout.addWidget(account_selector)
+    # Graphique pour afficher l'évolution du prix
+    price_graph = PriceGraph(parent_widget)
+    layout.addWidget(price_graph)
 
     # Résultat du solde
-    result_label = QLabel("Solde : N/A")
+    result_label = QLabel("Solde : Chargement...")
     result_label.setStyleSheet("""
         font-size: 18px;
         font-weight: bold;
         color: #A3BE8C;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #2E3440;
-        border-radius: 5px;
     """)
     layout.addWidget(result_label)
 
-    # Label pour afficher le prix du Solana
+    # Label pour afficher le prix actuel de Solana
     price_label = QLabel("Prix SOL : Chargement...")
     price_label.setStyleSheet("""
         font-size: 18px;
         font-weight: bold;
         color: #88C0D0;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #2E3440;
-        border-radius: 5px;
     """)
     layout.addWidget(price_label)
 
-    def update_price():
+    # Label pour afficher l'état de connexion au compte Phantom
+    connection_status_label = QLabel("Connexion : Vérification en cours...")
+    connection_status_label.setStyleSheet("""
+        font-size: 16px;
+        font-weight: bold;
+        color: #FFD700;  # Jaune pour indiquer une vérification en cours
+    """)
+    layout.addWidget(connection_status_label)
+
+    def update_data():
+        """
+        Met à jour le solde et le prix SOL en temps réel.
+        """
+        balance = check_balance_func()
         price = get_price_func()
+        
+        if balance is not None:
+            result_label.setText(f"Solde : {balance:.2f} SOL")
+        
         if price is not None:
             price_label.setText(f"Prix SOL : {price:.2f} USD")
+            price_graph.update_graph(price)
+
+        # Vérification de la connexion au compte Phantom
+        is_connected = check_connection_func()
+        if is_connected:
+            connection_status_label.setText("Connexion : Réussie ✅")
+            connection_status_label.setStyleSheet("""
+                font-size: 16px;
+                font-weight: bold;
+                color: #32CD32;  # Vert pour indiquer une connexion réussie
+            """)
         else:
-            price_label.setText("Erreur lors de la récupération du prix.")
+            connection_status_label.setText("Connexion : Échouée ❌")
+            connection_status_label.setStyleSheet("""
+                font-size: 16px;
+                font-weight: bold;
+                color: #FF4500;  # Rouge pour indiquer une erreur de connexion
+            """)
 
-    # Notifications (initialisation correcte ici)
-    notifications = []
+    # Rafraîchissement automatique avec QTimer
+    timer = QTimer(parent_widget)
+    timer.timeout.connect(update_data)  # Appelle la fonction update_data périodiquement
+    timer.start(5000)  # Rafraîchit toutes les 5 secondes
 
-    def add_notification(message):
-        notifications.append(message)
-        QMessageBox.information(parent_widget, "Notification", message)
-
-    def remove_notification_by_message(message):
-        if message in notifications:
-            notifications.remove(message)
-
-    # Bouton pour vérifier le solde
-    def on_check_balance():
-        selected_account_text = account_selector.currentText()
-        check_balance_func(selected_account_text, result_label,
-                           add_notification, remove_notification_by_message)
-
-    check_button = QPushButton("Vérifier le Solde")
-    check_button.setStyleSheet("""
+    # Bouton pour rafraîchir manuellement les données
+    refresh_button = QPushButton("Rafraîchir Manuellement")
+    refresh_button.setStyleSheet("""
         QPushButton {
             background-color: #5E81AC;
             color: white;
@@ -107,56 +130,7 @@ def create_ui(parent_widget, account_selector_values, check_balance_func, reload
             background-color: #4C566A;
         }
     """)
-    check_button.clicked.connect(on_check_balance)
-    layout.addWidget(check_button)
-
-    # Bouton pour rafraîchir les comptes
-    def on_reload_accounts():
-        new_accounts = reload_accounts_func()
-        account_selector.clear()
-        account_selector.addItems(new_accounts)
-
-    reload_button = QPushButton("Rafraîchir Comptes")
-    reload_button.setStyleSheet("""
-        QPushButton {
-            background-color: #88C0D0;
-            color: black;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            padding: 10px;
-            margin-top: 10px;
-        }
-        QPushButton:hover {
-            background-color: #8FBCBB;
-        }
-        QPushButton:pressed {
-            background-color: #81A1C1;
-        }
-    """)
-    reload_button.clicked.connect(on_reload_accounts)
-    layout.addWidget(reload_button)
-
-    # Bouton pour rafraîchir le prix du Solana
-    refresh_price_button = QPushButton("Rafraîchir Prix SOL")
-    refresh_price_button.setStyleSheet("""
-        QPushButton {
-            background-color: #88C0D0;
-            color: black;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            padding: 10px;
-            margin-top: 10px;
-        }
-        QPushButton:hover {
-            background-color: #8FBCBB;
-        }
-        QPushButton:pressed {
-            background-color: #81A1C1;
-        }
-    """)
-    refresh_price_button.clicked.connect(update_price)
-    layout.addWidget(refresh_price_button)
-
-    return account_selector, result_label, notifications, add_notification, remove_notification_by_message, update_price
+    
+    refresh_button.clicked.connect(update_data)
+    
+    layout.addWidget(refresh_button)

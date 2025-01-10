@@ -4,94 +4,151 @@ import requests
 from dotenv import load_dotenv
 from solana.rpc.api import Client
 from solders.keypair import Keypair  # type: ignore
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
-# Configuration du client Solana (Mainnet)
-client = Client("https://api.mainnet-beta.solana.com")
+# Configuration du client Solana
+SOLANA_ENDPOINT = os.getenv("SOLANA_ENDPOINT", "https://api.mainnet-beta.solana.com")
+client = Client(SOLANA_ENDPOINT)
+
+# Charger la clé privée depuis .env avec validation
+private_key_base58 = os.getenv("PRIVATE_KEY")
+
+if not private_key_base58:
+    raise ValueError("La clé privée (PRIVATE_KEY) n'est pas définie dans le fichier .env.")
+
+try:
+    private_key_bytes = base58.b58decode(private_key_base58)
+    keypair = Keypair.from_bytes(private_key_bytes)
+    public_key = keypair.pubkey()
+except Exception as e:
+    raise ValueError(f"Erreur lors du décodage de la clé privée : {e}")
 
 
-def reload_accounts():
+def check_connection():
     """
-    Recharge les comptes depuis le fichier .env.
-    
-    Returns:
-        list: Liste des comptes disponibles sous forme de chaînes.
+    Vérifie si la connexion au compte Phantom est réussie.
     """
-    accounts = []
-    for key in os.environ.keys():
-        if key.startswith("ACCOUNT_"):
-            private_key_base58 = os.getenv(key)
-            try:
-                private_key_bytes = base58.b58decode(private_key_base58)
-                public_key = Keypair.from_bytes(private_key_bytes).pubkey()
-                accounts.append(f"{key} ({public_key})")
-            except ValueError:
-                print(f"Clé invalide détectée pour {key}. Veuillez vérifier votre fichier .env.")
-    return accounts
-
-
-def check_balance(selected_account_text, result_label, add_notification_func, remove_notification_func):
-    """
-    Vérifie le solde du compte sélectionné.
-    
-    Args:
-        selected_account_text (str): Texte du compte sélectionné.
-        result_label (QLabel): Label où afficher le solde.
-        add_notification_func (callable): Fonction pour ajouter une notification.
-        remove_notification_func (callable): Fonction pour supprimer une notification spécifique.
-    """
-    # Supprimer les notifications "Veuillez sélectionner un compte" existantes
-    remove_notification_func("Veuillez sélectionner un compte")
-
-    if not selected_account_text:
-        add_notification_func("Veuillez sélectionner un compte.")
-        return
-
     try:
-        # Extraire la clé privée de .env
-        account_key = selected_account_text.split()[0]  # Obtenir la clé avant l'espace
-        private_key_base58 = os.getenv(account_key)
-        
-        if not private_key_base58:
-            raise ValueError(f"Clé privée introuvable pour {account_key}")
-
-        private_key_bytes = base58.b58decode(private_key_base58)
-        public_key = Keypair.from_bytes(private_key_bytes).pubkey()
-
-        # Appel API pour obtenir le solde
         balance_response = client.get_balance(public_key)
-
-        # Accéder à la valeur du solde via l'attribut `value`
-        balance_lamports = balance_response.value
-        
-        if balance_lamports is None:
-            add_notification_func(f"Erreur dans la réponse : {balance_response}")
-            return
-
-        # Affichage du solde en SOL (1 SOL = 10^9 lamports)
-        result_label.setText(f"Solde : {balance_lamports / 10**9:.2f} SOL")
-
-    except Exception as e:
-        add_notification_func(f"Erreur : {e}")
-
-
-def get_solana_price():
-    """
-    Récupère le prix actuel de Solana en USD à partir de l'API CoinGecko.
-    
-    Returns:
-        float: Le prix de Solana en USD, ou None si une erreur survient.
-    """
-    url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            return data['solana']['usd']
+        if balance_response.value is not None:
+            return True
         else:
-            print(f"Erreur API: {response.status_code}")
-            return None
+            return False
     except Exception as e:
+        print(f"Erreur lors de la vérification de la connexion : {e}")
+        return False
+
+
+def get_balance():
+    """
+    Récupère le solde du portefeuille Phantom en SOL.
+    """
+    try:
+        balance_response = client.get_balance(public_key)
+        balance_lamports = balance_response.value
+        return balance_lamports / 10**9  # Convertir les lamports en SOL
+    except Exception as e:
+        print(f"Erreur lors de la récupération du solde : {e}")
+        return None
+
+
+def get_solana_price_from_coinmarketcap():
+    """
+    Récupère le prix actuel de Solana en USD via l'API CoinMarketCap.
+    """
+    url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+    headers = {
+        "Accepts": "application/json",
+        "X-CMC_PRO_API_KEY": os.getenv("COINMARKETCAP_API_KEY"),
+    }
+    parameters = {
+        "symbol": "SOL",
+        "convert": "USD"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=parameters)
+        response.raise_for_status()
+        data = response.json()
+        return data["data"]["SOL"]["quote"]["USD"]["price"]
+    except requests.exceptions.RequestException as e:
         print(f"Erreur lors de la récupération du prix : {e}")
         return None
+
+
+def execute_trade(input_token, output_token, amount):
+    """
+    Exécute un swap via l'API Jupiter.
+    
+    Args:
+        input_token (str): Mint du token d'entrée (ex: "SOL").
+        output_token (str): Mint du token de sortie (ex: "USDC").
+        amount (float): Montant à échanger.
+    """
+    url = f"https://quote-api.jup.ag/v4/swap"
+    payload = {
+        "inputMint": input_token,
+        "outputMint": output_token,
+        "amount": int(amount * 10**9),  # Convertir SOL en lamports
+        "slippage": 1,  # Tolérance au slippage (1%)
+        "userPublicKey": str(public_key)
+    }
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Trade exécuté avec succès : {data}")
+            return data["transaction"]
+        else:
+            print(f"Erreur lors de l'exécution du trade : {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Erreur lors de l'exécution du trade : {e}")
+        return None
+
+
+def get_solana_price_scraper():
+    """
+    Récupère le prix actuel de Solana en USD en scrappant CoinMarketCap.
+    """
+    url = "https://coinmarketcap.com/currencies/solana/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Rechercher l'élément contenant le prix (peut varier selon la structure HTML)
+        price_tag = soup.find("div", class_="priceValue")
+        
+        if price_tag:
+            price_text = price_tag.text.replace("$", "").replace(",", "")
+            return float(price_text)
+        else:
+            print("Impossible de trouver le prix sur la page.")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Erreur lors du scraping : {e}")
+        return None
+
+def check_connection():
+    """
+    Vérifie si la connexion au compte Phantom est réussie.
+    """
+    try:
+        balance_response = client.get_balance(public_key)
+        if balance_response.value is not None:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f"Erreur lors de la vérification de la connexion : {e}")
+        return False
