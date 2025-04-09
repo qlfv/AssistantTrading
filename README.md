@@ -1,6 +1,6 @@
-# FinTechForesight 🚀
+# AssistantTrading
 
-**FinTechForesight** est un assistant intelligent conçu pour fournir des analyses de marché, des stratégies de trading, et répondre aux questions sur les cryptomonnaies et les marchés boursiers.
+J'ai conçu un assistant intelligent pour fournir des analyses de marché, des stratégies de trading, et répondre aux questions sur les cryptomonnaies et les marchés boursiers.
 
 ## Fonctionnalités principales :
 - 📉 Analyse des tendances de marché.
